@@ -26,9 +26,9 @@ class NetworkMonitorService : Service() {
     private val NOTIFICATION_ID = 1
 
     private val handler = Handler(Looper.getMainLooper())
-    private var currentInterval = 500L
+    private var currentInterval = 3500L
     private val maxInterval = 10000L
-    private val fastInterval = 500L
+    private val fastInterval = 3500L
 
     private var normalCount = 0
     private var reconnectCount = 0
