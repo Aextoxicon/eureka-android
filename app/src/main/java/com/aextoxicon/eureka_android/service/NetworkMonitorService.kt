@@ -274,7 +274,7 @@ class NetworkMonitorService : Service() {
             .setShowWhen(false)
             .setContentIntent(openAppPendingIntent)
             .addAction(
-                R.drawable.ic_launcher_foreground,
+                android.R.drawable.ic_media_play,
                 "强制激活",
                 forceActivatePendingIntent
             )

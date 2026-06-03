@@ -40,24 +40,29 @@ object NetworkMonitor {
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
         
-        connectivityManager.requestNetwork(networkRequest, object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                wifiNetwork = network
-                // 将整个进程的网络绑定到 WiFi
-                connectivityManager.bindProcessToNetwork(network)
-                LogManager.logDebug("网络监控 - 已绑定 WiFi 网络")
-            }
-            
-            override fun onLost(network: Network) {
-                if (wifiNetwork == network) {
-                    wifiNetwork = null
-                    connectivityManager.bindProcessToNetwork(null)
-                    LogManager.logWarning("网络监控 - WiFi 网络已断开")
-                    // 重新请求
-                    requestWifiNetwork()
+        try {
+            connectivityManager.requestNetwork(networkRequest, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    wifiNetwork = network
+                    // 将整个进程的网络绑定到 WiFi
+                    connectivityManager.bindProcessToNetwork(network)
+                    LogManager.logDebug("网络监控 - 已绑定 WiFi 网络")
                 }
-            }
-        })
+                
+                override fun onLost(network: Network) {
+                    if (wifiNetwork == network) {
+                        wifiNetwork = null
+                        connectivityManager.bindProcessToNetwork(null)
+                        LogManager.logWarning("网络监控 - WiFi 网络已断开")
+                        // 重新请求
+                        requestWifiNetwork()
+                    }
+                }
+            })
+            LogManager.logDebug("网络监控 - WiFi 网络请求已发送")
+        } catch (e: Exception) {
+            LogManager.logWarning("网络监控 - 请求 WiFi 网络失败: ${e.message ?: e.javaClass.simpleName}")
+        }
     }
     
     fun isInternetAvailable(): Boolean {
