@@ -69,6 +69,14 @@ class MainActivity : ComponentActivity() {
                 _normalCount.value = intent.getIntExtra("normal", 0)
                 _reconnectCount.value = intent.getIntExtra("reconnect", 0)
                 _failCount.value = intent.getIntExtra("fail", 0)
+            } else if (intent?.action == NetworkMonitorService.ACTION_EXIT) {
+                // 收到通知按钮的退出指令
+                LogManager.log("MainActivity - 收到退出指令")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                    finishAffinity()
+                } else {
+                    finish()
+                }
             }
         }
     }

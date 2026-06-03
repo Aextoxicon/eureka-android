@@ -3,13 +3,18 @@ package com.aextoxicon.eureka_android.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import com.aextoxicon.eureka_android.MainActivity
 import com.aextoxicon.eureka_android.R
 import com.aextoxicon.eureka_android.network.DrcomAuthenticator
 import com.aextoxicon.eureka_android.network.NetworkMonitor
@@ -114,10 +119,36 @@ class NetworkMonitorService : Service() {
         super.onCreate()
         LogManager.log("服务 - 创建")
         createNotificationChannel()
+        registerNotificationActionReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogManager.log("服务 - 启动")
+
+        // 处理通知按钮点击
+        when (intent?.action) {
+            ACTION_EXIT -> {
+                LogManager.log("通知 - 退出应用")
+                stopSelf()
+                // 发送广播通知 MainActivity 退出
+                sendBroadcast(Intent(ACTION_EXIT).apply { `package` = applicationContext.packageName })
+                return START_NOT_STICKY
+            }
+            ACTION_FORCE_ACTIVATE -> {
+                LogManager.log("通知 - 强制激活")
+                val username = PreferencesManager.getUsername()
+                val password = PreferencesManager.getPassword()
+                if (username.isNotEmpty() && password.isNotEmpty()) {
+                    Thread {
+                        val result = DrcomAuthenticator.login(username, password)
+                        handler.post {
+                            broadcastStatus(if (result) "强制激活成功" else "强制激活失败")
+                        }
+                    }.start()
+                }
+                return START_STICKY
+            }
+        }
 
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
@@ -136,9 +167,50 @@ class NetworkMonitorService : Service() {
         isRunning = false
         handler.removeCallbacks(taskRunnable)
         broadcastStatus("服务已停止")
+        unregisterReceiver(notificationActionReceiver)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    // ========================================================================
+    // 通知按钮广播接收器
+    // ========================================================================
+
+    private val notificationActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_EXIT -> {
+                    LogManager.log("广播 - 收到退出指令")
+                    stopSelf()
+                }
+                ACTION_FORCE_ACTIVATE -> {
+                    LogManager.log("广播 - 收到强制激活指令")
+                    val username = PreferencesManager.getUsername()
+                    val password = PreferencesManager.getPassword()
+                    if (username.isNotEmpty() && password.isNotEmpty()) {
+                        Thread {
+                            val result = DrcomAuthenticator.login(username, password)
+                            handler.post {
+                                broadcastStatus(if (result) "强制激活成功" else "强制激活失败")
+                            }
+                        }.start()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun registerNotificationActionReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(ACTION_EXIT)
+            addAction(ACTION_FORCE_ACTIVATE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(notificationActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(notificationActionReceiver, filter)
+        }
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -159,6 +231,39 @@ class NetworkMonitorService : Service() {
     }
 
     private fun createNotification(): Notification {
+        // 打开主应用的 PendingIntent
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openAppPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 强制激活按钮的 PendingIntent
+        val forceActivateIntent = Intent(this, NetworkMonitorService::class.java).apply {
+            action = ACTION_FORCE_ACTIVATE
+        }
+        val forceActivatePendingIntent = PendingIntent.getService(
+            this,
+            1,
+            forceActivateIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 退出应用按钮的 PendingIntent
+        val exitIntent = Intent(this, NetworkMonitorService::class.java).apply {
+            action = ACTION_EXIT
+        }
+        val exitPendingIntent = PendingIntent.getService(
+            this,
+            2,
+            exitIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Eureka")
             .setContentText("校园网监控服务运行中")
@@ -166,6 +271,17 @@ class NetworkMonitorService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setShowWhen(false)
+            .setContentIntent(openAppPendingIntent)
+            .addAction(
+                R.drawable.ic_launcher_foreground,
+                "强制激活",
+                forceActivatePendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "退出",
+                exitPendingIntent
+            )
             .build()
     }
 
@@ -190,5 +306,7 @@ class NetworkMonitorService : Service() {
         const val ACTION_START = "com.aextoxicon.eureka_android.ACTION_START"
         const val ACTION_STOP = "com.aextoxicon.eureka_android.ACTION_STOP"
         const val ACTION_STATUS_UPDATE = "com.aextoxicon.eureka_android.STATUS_UPDATE"
+        const val ACTION_EXIT = "com.aextoxicon.eureka_android.ACTION_EXIT"
+        const val ACTION_FORCE_ACTIVATE = "com.aextoxicon.eureka_android.ACTION_FORCE_ACTIVATE"
     }
 }
