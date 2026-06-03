@@ -21,11 +21,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val storeFileEnv = System.getenv("STORE_FILE")
+    val keystorePath = if (!storeFileEnv.isNullOrEmpty()) {
+        rootProject.file(storeFileEnv)?.absolutePath ?: storeFileEnv
+    } else {
+        rootProject.file("eureka-android.keystore")?.absolutePath ?: ""
+    }
+    val keystore = if (keystorePath.isNotEmpty()) file(keystorePath) else null
+
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("STORE_FILE") ?: "eureka-android.keystore"
-            val keystore = file(keystorePath)
-            if (keystore.exists()) {
+            if (keystore != null && keystore.exists()) {
                 storeFile = keystore
                 storePassword = System.getenv("STORE_PASSWORD") ?: ""
                 keyAlias = System.getenv("KEY_ALIAS") ?: ""
@@ -36,7 +42,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (keystore != null && keystore.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
