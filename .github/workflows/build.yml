@@ -102,20 +102,24 @@ jobs:
           fi
           git push origin "v${{ env.APP_VERSION }}"
 
+          RELEASE_APK=$(ls app/build/outputs/apk/release/app-release*.apk | head -1)
+          echo "Release APK path: $RELEASE_APK"
           gh release create "v${{ env.APP_VERSION }}" \
             --title "Release v${{ env.APP_VERSION }}" \
             --notes "Android APK 自动构建" \
             app/build/outputs/apk/debug/app-debug.apk \
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            "$RELEASE_APK"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to existing release
         if: ${{ steps.check_release.outputs.exists == 'true' }}
         run: |
+          RELEASE_APK=$(ls app/build/outputs/apk/release/app-release*.apk | head -1)
+          echo "Release APK path: $RELEASE_APK"
           gh release upload "v${{ env.APP_VERSION }}" \
             app/build/outputs/apk/debug/app-debug.apk \
-            app/build/outputs/apk/release/app-release-unsigned.apk \
+            "$RELEASE_APK" \
             --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
