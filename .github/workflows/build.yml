@@ -39,6 +39,20 @@ jobs:
             echo "No keystore secret found, release APK will be unsigned"
           fi
 
+      - name: Verify keystore
+        run: |
+          if [ -f release.keystore ]; then
+            echo "Keystore file found, verifying..."
+            keytool -list -v -keystore release.keystore \
+              -storepass "${{ secrets.STORE_PASSWORD }}" \
+              -alias "${{ secrets.KEY_ALIAS }}" \
+              -keypass "${{ secrets.KEY_PASSWORD }}" \
+              > /dev/null 2>&1 && echo "✓ Keystore verified successfully" \
+            || (echo "✗ Keystore verification failed, check secrets (STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD)" && exit 1)
+          else
+            echo "No keystore file, skipping verification"
+          fi
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
