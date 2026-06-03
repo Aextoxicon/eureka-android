@@ -25,7 +25,7 @@ android {
     val keystorePath = if (!storeFileEnv.isNullOrEmpty()) {
         rootProject.file(storeFileEnv)?.absolutePath ?: storeFileEnv
     } else {
-        rootProject.file("eureka-android.keystore")?.absolutePath ?: ""
+        rootProject.file("release.keystore")?.absolutePath ?: ""
     }
     val keystore = if (keystorePath.isNotEmpty()) file(keystorePath) else null
 
