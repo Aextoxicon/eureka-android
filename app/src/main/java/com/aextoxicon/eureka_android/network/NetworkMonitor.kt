@@ -1,5 +1,10 @@
 package com.aextoxicon.eureka_android.network
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import com.aextoxicon.eureka_android.storage.PreferencesManager
 import com.aextoxicon.eureka_android.utils.LogManager
 import okhttp3.OkHttpClient
@@ -15,6 +20,45 @@ object NetworkMonitor {
         .readTimeout(1, TimeUnit.SECONDS)
         .followRedirects(false)
         .build()
+    
+    private var wifiNetwork: Network? = null
+    private var context: Context? = null
+    
+    fun init(appContext: Context) {
+        context = appContext.applicationContext
+        requestWifiNetwork()
+    }
+    
+    /**
+     * 请求并绑定 WiFi 网络
+     */
+    private fun requestWifiNetwork() {
+        val ctx = context ?: return
+        val connectivityManager = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        
+        val networkRequest = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        
+        connectivityManager.requestNetwork(networkRequest, object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                wifiNetwork = network
+                // 将整个进程的网络绑定到 WiFi
+                connectivityManager.bindProcessToNetwork(network)
+                LogManager.logDebug("网络监控 - 已绑定 WiFi 网络")
+            }
+            
+            override fun onLost(network: Network) {
+                if (wifiNetwork == network) {
+                    wifiNetwork = null
+                    connectivityManager.bindProcessToNetwork(null)
+                    LogManager.logWarning("网络监控 - WiFi 网络已断开")
+                    // 重新请求
+                    requestWifiNetwork()
+                }
+            }
+        })
+    }
     
     fun isInternetAvailable(): Boolean {
         try {

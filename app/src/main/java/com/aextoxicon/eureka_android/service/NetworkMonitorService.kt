@@ -120,6 +120,7 @@ class NetworkMonitorService : Service() {
         LogManager.log("服务 - 创建")
         createNotificationChannel()
         registerNotificationActionReceiver()
+        NetworkMonitor.init(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
