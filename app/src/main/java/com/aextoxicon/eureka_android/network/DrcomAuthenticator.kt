@@ -40,12 +40,13 @@ object DrcomAuthenticator {
             if (result) {
                 LogManager.log("后台认证 - 登录成功")
             } else {
-                LogManager.logWarning("后台认证 - 登录失败")
+                LogManager.logWarning("后台认证 - 登录失败: HTTP ${response.code}, 响应: ${responseBody.take(200)}")
             }
             
             return result
         } catch (e: Exception) {
-            LogManager.logError("后台认证 - 登录异常: ${e.message}", e)
+            val errorMsg = e.message ?: e.javaClass.simpleName
+            LogManager.logError("后台认证 - 登录异常: $errorMsg", e)
             return false
         }
     }
