@@ -1,0 +1,107 @@
+name: build android
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Decode keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+            echo "Keystore decoded successfully"
+          else
+            echo "No keystore secret found, release APK will be unsigned"
+          fi
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+        env:
+          STORE_FILE: release.keystore
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Extract app version
+        id: extract_version
+        run: |
+          VERSION=$(grep -E "^[[:space:]]*versionName" app/build.gradle.kts | grep -oE '"[0-9]+\.[0-9]+[^"]*"' | tr -d '"' | head -1)
+          if [ -z "$VERSION" ]; then
+            VERSION="1.0"
+          fi
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          if gh release view "v${{ env.APP_VERSION }}" >/dev/null 2>&1; then
+            echo "Release v${{ env.APP_VERSION }} already exists"
+            echo "RELEASE_EXISTS=true" >> $GITHUB_ENV
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release v${{ env.APP_VERSION }} does not exist"
+            echo "RELEASE_EXISTS=false" >> $GITHUB_ENV
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create tag and release
+        if: ${{ steps.check_release.outputs.exists == 'false' }}
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          if git rev-parse "v${{ env.APP_VERSION }}" >/dev/null 2>&1; then
+            echo "Tag v${{ env.APP_VERSION }} already exists locally"
+          else
+            git tag -a "v${{ env.APP_VERSION }}" -m "Release v${{ env.APP_VERSION }}"
+          fi
+          git push origin "v${{ env.APP_VERSION }}"
+
+          gh release create "v${{ env.APP_VERSION }}" \
+            --title "Release v${{ env.APP_VERSION }}" \
+            --notes "Android APK 自动构建" \
+            app/build/outputs/apk/debug/app-debug.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to existing release
+        if: ${{ steps.check_release.outputs.exists == 'true' }}
+        run: |
+          gh release upload "v${{ env.APP_VERSION }}" \
+            app/build/outputs/apk/debug/app-debug.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk \
+            --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
