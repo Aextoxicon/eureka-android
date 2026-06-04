@@ -349,6 +349,7 @@ fun MainScreen(
     val activity = context as? MainActivity
     var username by remember { mutableStateOf(PreferencesManager.getUsername()) }
     var showConfigDialog by remember { mutableStateOf(false) }
+    var showStartServiceDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var logs by remember { mutableStateOf(LogManager.getLogs()) }
 
@@ -418,34 +419,36 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             // ---- 操作按钮 ----
-            Row(
+            Button(
+                onClick = { showStartServiceDialog = true },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                enabled = PreferencesManager.isConfigured()
             ) {
-                Button(
-                    onClick = { activity?.startService() },
-                    modifier = Modifier.weight(1f),
-                    enabled = PreferencesManager.isConfigured()
-                ) {
-                    Text("启动服务")
-                }
-
-                Button(
-                    onClick = { activity?.stopService() },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("停止服务")
-                }
+                Text("启动服务")
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Button(
-                onClick = { activity?.performLogin() },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = PreferencesManager.isConfigured()
-            ) {
-                Text("立即登录")
+            if (serviceStatus == "未运行" || serviceStatus.contains("停止")) {
+                OutlinedButton(
+                    onClick = { showConfigDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("配置")
+                }
+            } else {
+                Button(
+                    onClick = { activity?.stopService() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("停止服务并退出")
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -467,19 +470,6 @@ fun MainScreen(
                 ) {
                     Text("检查更新")
                 }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ---- 配置按钮 ----
-            OutlinedButton(
-                onClick = { showConfigDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Text("配置")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -623,6 +613,19 @@ fun MainScreen(
     }
 
     // ====================================================================
+    // 启动服务弹窗
+    // ====================================================================
+    if (showStartServiceDialog) {
+        StartServiceDialog(
+            onDismiss = { showStartServiceDialog = false },
+            onStart = {
+                showStartServiceDialog = false
+                activity?.startService()
+            }
+        )
+    }
+
+    // ====================================================================
     // 帮助弹窗
     // ====================================================================
     if (showHelpDialog) {
@@ -691,6 +694,63 @@ fun ConfigDialog(
                 }
             ) {
                 Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+// ========================================================================
+// 启动服务对话框
+// ========================================================================
+
+@Composable
+fun StartServiceDialog(
+    onDismiss: () -> Unit,
+    onStart: () -> Unit
+) {
+    val username = PreferencesManager.getUsername()
+    val password = PreferencesManager.getPassword()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("启动服务") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = {},
+                    label = { Text("用户名") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = false
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {},
+                    label = { Text("密码") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = false
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "如需修改配置，请先停止服务",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onStart) {
+                Text("启动服务")
             }
         },
         dismissButton = {
