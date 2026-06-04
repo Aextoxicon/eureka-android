@@ -43,75 +43,79 @@ class NetworkMonitorService : Service() {
         override fun run() {
             if (!isRunning) return
 
-            try {
-                val username = PreferencesManager.getUsername()
-                val password = PreferencesManager.getPassword()
+            Thread {
+                try {
+                    val username = PreferencesManager.getUsername()
+                    val password = PreferencesManager.getPassword()
 
-                if (username.isEmpty() || password.isEmpty()) {
-                    LogManager.logWarning("后台任务 - 配置缺失")
-                    broadcastStatus("配置缺失")
-                    return
-                }
+                    if (username.isEmpty() || password.isEmpty()) {
+                        LogManager.logWarning("后台任务 - 配置缺失")
+                        handler.post { broadcastStatus("配置缺失") }
+                        handler.postDelayed(this, currentInterval)
+                        return@Thread
+                    }
 
-                LogManager.logDebug("后台任务 - 开始网络检测")
-                val netOk = NetworkMonitor.isInternetAvailable()
-                LogManager.logDebug("后台任务 - 网络检测完成: $netOk")
+                    LogManager.logDebug("后台任务 - 开始网络检测")
+                    val netOk = NetworkMonitor.isInternetAvailable()
+                    LogManager.logDebug("后台任务 - 网络检测完成: $netOk")
 
-                var ok = false
-                if (netOk) {
-                    normalCount++
-                    stableCount++
-                    LogManager.log("后台任务 - 网络正常，连续稳定 $stableCount 次")
+                    var ok = false
+                    if (netOk) {
+                        normalCount++
+                        stableCount++
+                        LogManager.log("后台任务 - 网络正常，连续稳定 $stableCount 次")
 
-                    if (stableCount > 5 && currentInterval < maxInterval) {
-                        currentInterval = (currentInterval * 1.1).toLong()
-                        if (currentInterval > maxInterval) {
-                            currentInterval = maxInterval
+                        if (stableCount > 5 && currentInterval < maxInterval) {
+                            currentInterval = (currentInterval * 1.1).toLong()
+                            if (currentInterval > maxInterval) {
+                                currentInterval = maxInterval
+                            }
+                            LogManager.log("后台任务 - 网络稳定，延长检测间隔至 ${currentInterval}ms")
                         }
-                        LogManager.log("后台任务 - 网络稳定，延长检测间隔至 ${currentInterval}ms")
-                    }
-                } else {
-                    LogManager.log("后台任务 - 网络异常，开始登录")
-                    if (currentInterval != fastInterval) {
-                        currentInterval = fastInterval
-                        stableCount = 0
-                        LogManager.log("后台任务 - 恢复快速检测模式 (间隔: ${currentInterval}ms)")
-                    }
-
-                    val loginResult = DrcomAuthenticator.login(username, password)
-                    if (loginResult) {
-                        reconnectCount++
-                        ok = true
                     } else {
-                        failCount++
-                        ok = false
+                        LogManager.log("后台任务 - 网络异常，开始登录")
+                        if (currentInterval != fastInterval) {
+                            currentInterval = fastInterval
+                            stableCount = 0
+                            LogManager.log("后台任务 - 恢复快速检测模式 (间隔: ${currentInterval}ms)")
+                        }
+
+                        val loginResult = DrcomAuthenticator.login(username, password)
+                        if (loginResult) {
+                            reconnectCount++
+                            ok = true
+                        } else {
+                            failCount++
+                            ok = false
+                        }
                     }
+
+                    consecutiveErrors = 0
+                    val status = when {
+                        netOk -> "网络正常"
+                        ok -> "重连成功"
+                        else -> "重连失败"
+                    }
+                    handler.post { broadcastStatus(status) }
+
+                    handler.postDelayed(this, currentInterval)
+                } catch (e: Exception) {
+                    consecutiveErrors++
+                    LogManager.logError("后台任务发生错误 ($consecutiveErrors/$maxConsecutiveErrors): ${e.message}", e)
+
+                    if (consecutiveErrors >= maxConsecutiveErrors) {
+                        LogManager.logError("后台任务连续错误过多，自动停止服务")
+                        handler.post {
+                            broadcastStatus("服务异常停止")
+                            stopSelf()
+                        }
+                        return@Thread
+                    }
+
+                    handler.post { broadcastStatus("任务错误") }
+                    handler.postDelayed(this, currentInterval)
                 }
-
-                consecutiveErrors = 0
-                val status = when {
-                    netOk -> "网络正常"
-                    ok -> "重连成功"
-                    else -> "重连失败"
-                }
-                broadcastStatus(status)
-
-                scheduleNextCheck()
-            } catch (e: Exception) {
-                consecutiveErrors++
-                LogManager.logError("后台任务发生错误 ($consecutiveErrors/$maxConsecutiveErrors): ${e.message}", e)
-
-                if (consecutiveErrors >= maxConsecutiveErrors) {
-                    LogManager.logError("后台任务连续错误过多，自动停止服务")
-                    broadcastStatus("服务异常停止")
-                    stopSelf()
-                    return
-                }
-
-                broadcastStatus("任务错误")
-                currentInterval = fastInterval
-                scheduleNextCheck()
-            }
+            }.start()
         }
     }
 
