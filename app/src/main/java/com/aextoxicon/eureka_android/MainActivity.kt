@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         PreferencesManager.init(applicationContext)
+        LogManager.init(applicationContext)
         LogManager.setListener { }
 
         // 注册服务状态广播（内部通信，不对外暴露）
@@ -293,6 +295,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ========================================================================
+    // 导出日志
+    // ========================================================================
+
+    fun exportLogs() {
+        val logFile = java.io.File(filesDir, "eureka_logs.txt")
+        if (!logFile.exists() || logFile.length() == 0L) {
+            LogManager.logWarning("没有可导出的日志")
+            return
+        }
+
+        val uri: Uri = androidx.core.content.FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            logFile
+        )
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        startActivity(Intent.createChooser(shareIntent, "分享日志文件"))
+    }
+
 }
 
 // ========================================================================
@@ -321,6 +349,7 @@ fun MainScreen(
     val activity = context as? MainActivity
     var username by remember { mutableStateOf(PreferencesManager.getUsername()) }
     var showConfigDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
     var logs by remember { mutableStateOf(LogManager.getLogs()) }
 
     LaunchedEffect(Unit) {
@@ -426,10 +455,10 @@ fun MainScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = { showConfigDialog = true },
+                    onClick = { showHelpDialog = true },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("配置")
+                    Text("帮助")
                 }
 
                 OutlinedButton(
@@ -442,15 +471,15 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // ---- 停止并退出按钮 ----
+            // ---- 配置按钮 ----
             OutlinedButton(
-                onClick = onShowExitDialog,
+                onClick = { showConfigDialog = true },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("停止服务并退出")
+                Text("配置")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -582,12 +611,26 @@ fun MainScreen(
     if (showConfigDialog) {
         ConfigDialog(
             onDismiss = { showConfigDialog = false },
-            onSave = { user, pass ->
+            onSave = { user, pass, disableBackoff ->
                 PreferencesManager.setUsername(user)
                 PreferencesManager.setPassword(pass)
+                PreferencesManager.setDisableBackoff(disableBackoff)
                 username = user
                 showConfigDialog = false
                 activity?.stopService()
+            }
+        )
+    }
+
+    // ====================================================================
+    // 帮助弹窗
+    // ====================================================================
+    if (showHelpDialog) {
+        HelpDialog(
+            onDismiss = { showHelpDialog = false },
+            onExportLogs = {
+                showHelpDialog = false
+                activity?.exportLogs()
             }
         )
     }
@@ -600,10 +643,11 @@ fun MainScreen(
 @Composable
 fun ConfigDialog(
     onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit
+    onSave: (String, String, Boolean) -> Unit
 ) {
     var username by remember { mutableStateOf(PreferencesManager.getUsername()) }
     var password by remember { mutableStateOf(PreferencesManager.getPassword()) }
+    var disableBackoff by remember { mutableStateOf(PreferencesManager.isDisableBackoff()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -625,15 +669,69 @@ fun ConfigDialog(
                     label = { Text("密码") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = disableBackoff,
+                        onCheckedChange = { disableBackoff = it }
+                    )
+                    Text("停止退避请求（固定 1s 间隔）")
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(username.trim(), password.trim())
+                    onSave(username.trim(), password.trim(), disableBackoff)
                 }
             ) {
                 Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+// ========================================================================
+// 帮助对话框
+// ========================================================================
+
+@Composable
+fun HelpDialog(
+    onDismiss: () -> Unit,
+    onExportLogs: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("帮助") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "如果应用在后台运行时效果不符合预期，请检查以下几项：",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("• 通知权限和电池优化（应用会显式提醒配置）")
+                Text("• 前往手机管家开启后台任务权限")
+                Text("• 检查是否有更新")
+                Text("• 联系作者：QQ 3846962714（建议附带日志）")
+            }
+        },
+        confirmButton = {
+            Button(onClick = onExportLogs) {
+                Text("导出日志")
             }
         },
         dismissButton = {

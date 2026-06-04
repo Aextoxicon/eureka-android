@@ -30,6 +30,11 @@ class NetworkMonitorService : Service() {
     private var currentInterval = 3500L
     private val maxInterval = 10000L
     private val fastInterval = 3500L
+    private val fixedInterval = 1000L
+
+    private fun getEffectiveInterval(): Long {
+        return if (PreferencesManager.isDisableBackoff()) fixedInterval else currentInterval
+    }
 
     private var normalCount = 0
     private var reconnectCount = 0
@@ -56,7 +61,7 @@ class NetworkMonitorService : Service() {
                     if (username.isEmpty() || password.isEmpty()) {
                         LogManager.logWarning("后台任务 - 配置缺失")
                         handler.post { broadcastStatus("配置缺失") }
-                        handler.postDelayed(this, currentInterval)
+                        handler.postDelayed(this, getEffectiveInterval())
                         return@Thread
                     }
 
@@ -103,7 +108,7 @@ class NetworkMonitorService : Service() {
                     }
                     handler.post { broadcastStatus(status) }
 
-                    handler.postDelayed(this, currentInterval)
+                    handler.postDelayed(this, getEffectiveInterval())
                 } catch (e: Exception) {
                     consecutiveErrors++
                     LogManager.logError("后台任务发生错误 ($consecutiveErrors/$maxConsecutiveErrors): ${e.message}", e)
@@ -118,7 +123,7 @@ class NetworkMonitorService : Service() {
                     }
 
                     handler.post { broadcastStatus("任务错误") }
-                    handler.postDelayed(this, currentInterval)
+                    handler.postDelayed(this, getEffectiveInterval())
                 } finally {
                     // 释放 WakeLock
                     releaseWakeLock()
@@ -301,7 +306,7 @@ class NetworkMonitorService : Service() {
 
     private fun scheduleNextCheck() {
         handler.removeCallbacks(taskRunnable)
-        handler.postDelayed(taskRunnable, currentInterval)
+        handler.postDelayed(taskRunnable, getEffectiveInterval())
     }
 
     private fun broadcastStatus(status: String) {

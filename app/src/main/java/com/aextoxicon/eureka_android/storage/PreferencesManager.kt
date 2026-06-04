@@ -8,6 +8,7 @@ object PreferencesManager {
     private const val PREFS_NAME = "eureka_prefs"
     private const val KEY_USERNAME = "username"
     private const val KEY_PASSWORD = "password"
+    private const val KEY_DISABLE_BACKOFF = "disable_backoff"
     
     private lateinit var prefs: SharedPreferences
     
@@ -36,6 +37,15 @@ object PreferencesManager {
     
     fun isConfigured(): Boolean {
         return getUsername().isNotEmpty()
+    }
+    
+    fun isDisableBackoff(): Boolean {
+        return prefs.getBoolean(KEY_DISABLE_BACKOFF, false)
+    }
+    
+    fun setDisableBackoff(disable: Boolean) {
+        prefs.edit().putBoolean(KEY_DISABLE_BACKOFF, disable).apply()
+        LogManager.log("停止退避请求: $disable")
     }
     
     fun clearCredentials() {
