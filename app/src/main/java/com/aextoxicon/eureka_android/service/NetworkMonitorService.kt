@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.aextoxicon.eureka_android.MainActivity
 import com.aextoxicon.eureka_android.R
@@ -38,6 +39,7 @@ class NetworkMonitorService : Service() {
     private val maxConsecutiveErrors = 3
 
     private var isRunning = false
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val taskRunnable = object : Runnable {
         override fun run() {
@@ -45,6 +47,9 @@ class NetworkMonitorService : Service() {
 
             Thread {
                 try {
+                    // 获取 WakeLock 防止 CPU 休眠
+                    acquireWakeLock()
+
                     val username = PreferencesManager.getUsername()
                     val password = PreferencesManager.getPassword()
 
@@ -114,6 +119,9 @@ class NetworkMonitorService : Service() {
 
                     handler.post { broadcastStatus("任务错误") }
                     handler.postDelayed(this, currentInterval)
+                } finally {
+                    // 释放 WakeLock
+                    releaseWakeLock()
                 }
             }.start()
         }
@@ -171,6 +179,7 @@ class NetworkMonitorService : Service() {
         LogManager.log("服务 - 销毁")
         isRunning = false
         handler.removeCallbacks(taskRunnable)
+        releaseWakeLock()
         broadcastStatus("服务已停止")
         unregisterReceiver(notificationActionReceiver)
     }
@@ -222,7 +231,7 @@ class NetworkMonitorService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Eureka Service",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "用于保持校园网连接的后台服务"
                 setShowBadge(false)
@@ -305,6 +314,39 @@ class NetworkMonitorService : Service() {
             `package` = applicationContext.packageName
         }
         sendBroadcast(intent)
+    }
+
+    // ========================================================================
+    // WakeLock 管理
+    // ========================================================================
+
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "Eureka::NetworkMonitorWakeLock"
+                )
+            }
+            if (!wakeLock!!.isHeld) {
+                wakeLock!!.acquire(30 * 1000L) // 最多持有30秒，超时自动释放
+                LogManager.logDebug("WakeLock - 已获取")
+            }
+        } catch (e: Exception) {
+            LogManager.logWarning("WakeLock - 获取失败: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock!!.release()
+                LogManager.logDebug("WakeLock - 已释放")
+            }
+        } catch (e: Exception) {
+            LogManager.logWarning("WakeLock - 释放失败: ${e.message}")
+        }
     }
 
     companion object {
