@@ -362,6 +362,4 @@ class NetworkMonitorService : Service() {
             LogManager.logWarning("WakeLock - 释放失败: ${e.message}")
         }
     }
-
-    }
 }
