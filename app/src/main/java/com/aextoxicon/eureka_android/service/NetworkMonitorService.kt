@@ -44,6 +44,18 @@ class NetworkMonitorService : Service() {
     private val maxConsecutiveErrors = 3
 
     private var isRunning = false
+
+    companion object {
+        const val ACTION_START = "com.aextoxicon.eureka_android.ACTION_START"
+        const val ACTION_STOP = "com.aextoxicon.eureka_android.ACTION_STOP"
+        const val ACTION_STATUS_UPDATE = "com.aextoxicon.eureka_android.STATUS_UPDATE"
+        const val ACTION_EXIT = "com.aextoxicon.eureka_android.ACTION_EXIT"
+        const val ACTION_FORCE_ACTIVATE = "com.aextoxicon.eureka_android.ACTION_FORCE_ACTIVATE"
+
+        @Volatile
+        var isServiceRunning = false
+            private set
+    }
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val taskRunnable = object : Runnable {
@@ -52,9 +64,6 @@ class NetworkMonitorService : Service() {
 
             Thread {
                 try {
-                    // 获取 WakeLock 防止 CPU 休眠
-                    acquireWakeLock()
-
                     val username = PreferencesManager.getUsername()
                     val password = PreferencesManager.getPassword()
 
@@ -125,8 +134,7 @@ class NetworkMonitorService : Service() {
                     handler.post { broadcastStatus("任务错误") }
                     handler.postDelayed(this, getEffectiveInterval())
                 } finally {
-                    // 释放 WakeLock
-                    releaseWakeLock()
+                    // 不再每次释放 WakeLock，服务运行期间持续持有
                 }
             }.start()
         }
@@ -172,6 +180,8 @@ class NetworkMonitorService : Service() {
         startForeground(NOTIFICATION_ID, notification)
 
         isRunning = true
+        isServiceRunning = true
+        acquireWakeLock()
         // 发送初始状态
         broadcastStatus("运行中")
         scheduleNextCheck()
@@ -183,6 +193,7 @@ class NetworkMonitorService : Service() {
         super.onDestroy()
         LogManager.log("服务 - 销毁")
         isRunning = false
+        isServiceRunning = false
         handler.removeCallbacks(taskRunnable)
         releaseWakeLock()
         broadcastStatus("服务已停止")
@@ -232,21 +243,19 @@ class NetworkMonitorService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Eureka Service",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "用于保持校园网连接的后台服务"
-                setShowBadge(false)
-                enableVibration(false)
-                setSound(null, null)
-            }
-
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Eureka Service",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "用于保持校园网连接的后台服务"
+            setShowBadge(false)
+            enableVibration(false)
+            setSound(null, null)
         }
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(channel)
     }
 
     private fun createNotification(): Notification {
@@ -335,8 +344,8 @@ class NetworkMonitorService : Service() {
                 )
             }
             if (!wakeLock!!.isHeld) {
-                wakeLock!!.acquire(30 * 1000L) // 最多持有30秒，超时自动释放
-                LogManager.logDebug("WakeLock - 已获取")
+                wakeLock!!.acquire()
+                LogManager.logDebug("WakeLock - 已获取（服务运行期间持续持有）")
             }
         } catch (e: Exception) {
             LogManager.logWarning("WakeLock - 获取失败: ${e.message}")
@@ -354,11 +363,5 @@ class NetworkMonitorService : Service() {
         }
     }
 
-    companion object {
-        const val ACTION_START = "com.aextoxicon.eureka_android.ACTION_START"
-        const val ACTION_STOP = "com.aextoxicon.eureka_android.ACTION_STOP"
-        const val ACTION_STATUS_UPDATE = "com.aextoxicon.eureka_android.STATUS_UPDATE"
-        const val ACTION_EXIT = "com.aextoxicon.eureka_android.ACTION_EXIT"
-        const val ACTION_FORCE_ACTIVATE = "com.aextoxicon.eureka_android.ACTION_FORCE_ACTIVATE"
     }
 }

@@ -13,10 +13,10 @@ android {
 
     defaultConfig {
         applicationId = "com.aextoxicon.eureka_android"
-        minSdk = 23
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "1.4.1"
+        versionName = "1.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

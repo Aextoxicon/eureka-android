@@ -2,7 +2,6 @@ package com.aextoxicon.eureka_android
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -30,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aextoxicon.eureka_android.network.DrcomAuthenticator
 import com.aextoxicon.eureka_android.service.NetworkMonitorService
+import com.aextoxicon.eureka_android.service.ServiceKeepAliveWorker
 import com.aextoxicon.eureka_android.storage.PreferencesManager
 import com.aextoxicon.eureka_android.ui.theme.EurekaandroidTheme
 import com.aextoxicon.eureka_android.utils.LogManager
@@ -73,11 +73,7 @@ class MainActivity : ComponentActivity() {
             } else if (intent?.action == NetworkMonitorService.ACTION_EXIT) {
                 // 收到通知按钮的退出指令
                 LogManager.log("MainActivity - 收到退出指令")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                    finishAffinity()
-                } else {
-                    finish()
-                }
+                finishAffinity()
             }
         }
     }
@@ -96,7 +92,7 @@ class MainActivity : ComponentActivity() {
         LogManager.setListener { }
 
         // 注册服务状态广播（内部通信，不对外暴露）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // API 33+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(
                 serviceStatusReceiver,
                 IntentFilter(NetworkMonitorService.ACTION_STATUS_UPDATE),
@@ -158,7 +154,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         checkBatteryOptimization()
         // 检查服务是否已停止（如果状态是运行中但服务已死，更新状态）
-        val isRunning = isServiceRunning()
+        val isRunning = NetworkMonitorService.isServiceRunning
         if (!isRunning && _serviceStatus.value in listOf("运行中", "启动中...", "网络正常", "重连成功", "重连失败")) {
             _serviceStatus.value = "服务已停止"
         }
@@ -179,11 +175,6 @@ class MainActivity : ComponentActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
 
         if (permissions.isNotEmpty()) {
@@ -215,13 +206,10 @@ class MainActivity : ComponentActivity() {
     fun startService() {
         if (PreferencesManager.isConfigured()) {
             val intent = Intent(this, NetworkMonitorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            startForegroundService(intent)
             _serviceStatus.value = "启动中..."
             LogManager.log("服务已启动")
+            ServiceKeepAliveWorker.start(this)
         } else {
             LogManager.logWarning("配置缺失，无法启动服务")
         }
@@ -232,22 +220,12 @@ class MainActivity : ComponentActivity() {
         stopService(intent)
         _serviceStatus.value = "服务已停止"
         LogManager.log("服务已停止")
+        ServiceKeepAliveWorker.stop(this)
     }
 
     fun stopAndExit() {
         stopService()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            finishAffinity()
-        } else {
-            finish()
-        }
-    }
-
-    private fun isServiceRunning(): Boolean {
-        val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
-        return manager?.getRunningServices(Integer.MAX_VALUE)
-            ?.any { it.service.className == NetworkMonitorService::class.java.name }
-            ?: false
+        finishAffinity()
     }
 
     // ========================================================================
