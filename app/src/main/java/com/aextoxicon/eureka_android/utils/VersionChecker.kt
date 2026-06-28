@@ -46,6 +46,9 @@ object VersionChecker {
             val responseBody = response.body?.string() ?: ""
             val jsonResponse = JSONObject(responseBody)
             
+            // 打印原始 JSON 到日志，方便调试
+            LogManager.log("版本检查 - API 原始返回: $responseBody")
+            
             val tagName = jsonResponse.optString("tag_name", "")
             if (tagName.isEmpty()) {
                 LogManager.logError("版本检查 - 远程版本标签为空")
