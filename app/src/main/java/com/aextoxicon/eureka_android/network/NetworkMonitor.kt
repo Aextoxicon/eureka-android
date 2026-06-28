@@ -90,11 +90,8 @@ object NetworkMonitor {
             return result
         } catch (e: Exception) {
             LogManager.logWarning("后台认证 - 网络检测异常: ${e.message}")
-            
-            val username = PreferencesManager.getUsername()
-            val password = PreferencesManager.getPassword()
-            DrcomAuthenticator.login(username, password)
-            
+            // 注意：不在 catch 中触发登录，由调用方（NetworkMonitorService）统一处理
+            // 避免与后台任务的登录逻辑产生竞态条件（双重登录）
             return false
         }
     }

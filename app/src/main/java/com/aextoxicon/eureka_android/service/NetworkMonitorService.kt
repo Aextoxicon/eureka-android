@@ -43,6 +43,11 @@ class NetworkMonitorService : Service() {
     private var consecutiveErrors = 0
     private val maxConsecutiveErrors = 3
 
+    // 登录限流保护：防止过于频繁的登录请求
+    private var lastLoginTime = 0L
+    private val minLoginInterval = 5000L // 最小登录间隔 5 秒
+    private var isLoggingIn = false
+
     private var isRunning = false
 
     companion object {
@@ -99,13 +104,30 @@ class NetworkMonitorService : Service() {
                             LogManager.log("后台任务 - 恢复快速检测模式 (间隔: ${currentInterval}ms)")
                         }
 
-                        val loginResult = DrcomAuthenticator.login(username, password)
-                        if (loginResult) {
-                            reconnectCount++
-                            ok = true
-                        } else {
-                            failCount++
+                        // 登录限流：防止过于频繁的登录请求
+                        val now = System.currentTimeMillis()
+                        if (isLoggingIn) {
+                            LogManager.logWarning("后台任务 - 已有登录请求在进行中，跳过本次")
                             ok = false
+                        } else if (now - lastLoginTime < minLoginInterval) {
+                            val remaining = minLoginInterval - (now - lastLoginTime)
+                            LogManager.logWarning("后台任务 - 登录过于频繁，跳过（距上次登录 ${now - lastLoginTime}ms，需等待 ${remaining}ms）")
+                            ok = false
+                        } else {
+                            isLoggingIn = true
+                            lastLoginTime = now
+                            try {
+                                val loginResult = DrcomAuthenticator.login(username, password)
+                                if (loginResult) {
+                                    reconnectCount++
+                                    ok = true
+                                } else {
+                                    failCount++
+                                    ok = false
+                                }
+                            } finally {
+                                isLoggingIn = false
+                            }
                         }
                     }
 
